@@ -1,53 +1,62 @@
 package com.cos.jwt.config;
 
-import com.cos.jwt.filter.MyFilter1;
-import com.cos.jwt.filter.MyFilter3;
+import com.cos.jwt.config.jwt.JwtAuthenticationFilter;
+import com.cos.jwt.config.jwt.JwtAuthorizationFilter;
+import com.cos.jwt.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
-import org.aspectj.weaver.ast.And;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-import org.springframework.security.config.annotation.web.configuration.WebSecurityConfigurerAdapter;
+import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-import org.springframework.security.web.authentication.www.BasicAuthenticationFilter;
-import org.springframework.security.web.context.SecurityContextPersistenceFilter;
-import org.springframework.web.filter.CorsFilter;
+
 
 @Configuration
 @EnableWebSecurity
 @RequiredArgsConstructor
-public class SecurityConfig{
+public class SecurityConfig {
 
-    private final CorsFilter corsFilter;
+    private final UserRepository userRepository;
+    private final CorsConfig corsConfig;
 
 
     // 스프링시큐리티가 우선 순위가 제일 높음 addFilterAfter로 해도 제일 높음
     // 스프링시큐리티 보다 먼저 동작하게 하고 싶다면 addFilterBefore에 등록
     // SecurityFilterChain에서 동작 순서를 보고 결정할 수 있음
+
     @Bean
-    protected SecurityFilterChain configure(HttpSecurity http) throws Exception {
-        http.addFilterBefore(new MyFilter3(), UsernamePasswordAuthenticationFilter.class);
-        http.csrf().disable();
-        http.sessionManagement().sessionCreationPolicy(SessionCreationPolicy.STATELESS) // 세션을 생성하지 않겠다
+    SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+        return http
+                .csrf().disable()
+                .sessionManagement().sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 .and()
-                .addFilter(corsFilter) // CrossOrigin(인증이 없을 때 사용), 시큐리티 필터에 등록 인증(인증이 필요할 때)
-                .formLogin().disable() // 폼태그 로그인 안 씀
-                .httpBasic().disable() // http 로그인 방식 안 씀
-                .authorizeRequests()
-                .antMatchers("/api/v1/user/**")
-                .access("hasRole('ROLE_USER') or HasRole('ROLE_MANAGER') or HasRole('ROLE_ADMIN')")
-                .antMatchers("/api/v1/manager/**")
-                .access("HasRole('ROLE_MANAGER') or HasRole('ROLE_ADMIN')")
-                .antMatchers("/api/v1/admin/**")
-                .access("HasRole('ROLE_ADMIN')")
-                .anyRequest().permitAll();
-
-        return http.build();
-
-
+                .formLogin().disable()
+                .httpBasic().disable()
+                .apply(new MyCustomDsl()) // 커스텀 필터 등록
+                .and()
+                .authorizeRequests(authroize -> authroize.antMatchers("/api/v1/user/**")
+                        .access("hasRole('ROLE_USER') or hasRole('ROLE_MANAGER') or hasRole('ROLE_ADMIN')")
+                        .antMatchers("/api/v1/manager/**")
+                        .access("hasRole('ROLE_MANAGER') or hasRole('ROLE_ADMIN')")
+                        .antMatchers("/api/v1/admin/**")
+                        .access("hasRole('ROLE_ADMIN')")
+                        .anyRequest().permitAll())
+                .build();
     }
+
+    public class MyCustomDsl extends AbstractHttpConfigurer<MyCustomDsl, HttpSecurity> {
+        @Override
+        public void configure(HttpSecurity http) throws Exception {
+            AuthenticationManager authenticationManager = http.getSharedObject(AuthenticationManager.class);
+            http
+                    .addFilter(corsConfig.corsFilter())
+                    .addFilter(new JwtAuthenticationFilter(authenticationManager))
+                    .addFilter(new JwtAuthorizationFilter(authenticationManager, userRepository));
+        }
+    }
+
 
 }
