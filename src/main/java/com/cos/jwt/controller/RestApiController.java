@@ -37,6 +37,12 @@ public class RestApiController {
         return "<h1>user</h1>";
     }
 
+    // 로그인 후 생성된 토큰으로 인증 후 사용 가능
+    @GetMapping("userList")
+    public List<User> userList(){
+        return userRepository.findAll();
+    }
+
     // 매니저 혹은 어드민이 접근 가능
     @GetMapping("manager/reports")
     public String reports() {
